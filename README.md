@@ -1,30 +1,33 @@
-# chromecastslack
-Report your playing songs to slack!
+# chromecastsoundbridge
 
-This script will look for active Chromecasts in your LAN, then report the currently played song to a slack channel of your choosing.
+Display your currently playing songs on that beautiful display of your ancient Roku / Pinnacle SoundBridge M1001!
 
-I tested this script with Python >= 3.5. Other versions (3.0 and up) should work, but haven't been tested.
+This was adapted from https://github.com/sh0oki/chromecastslack which was an excellent starting point. Thank you, sh0oki!
+
+The script will look for active Chromecasts in your LAN, then report the currently played song to a Soundbridge via its network port and the `sketch` feature.
+
+I tested this script with Python >= 3.10.12. Other versions should work, but haven't been tested.
 
 ## Setup
 1. Have a working Chromecast in your LAN, playing music from your favorite source (Spotify, Soundcloud, ...).
-1. [Create a bot user](https://my.slack.com/services/new/bot) in your Slack account.
+1. TODO
 1. Install *chromecastslack* on any computer in your LAN. 
-1. Use the API token (*xoxb-a-b*) to execute the bot.
+1. TODO
 
 ## Installing
 ```
-git clone git@github.com:sh0oki/chromecastslack.git
-cd chromecastslack
+git clone git@github.com:mikerofone/chromecastsoundbridge.git
+cd chromecastsoundbridge
 pip3 install -r ./requirements.txt
 ```
 
 ## Usage
 ```
-SLACKBOT_TOKEN=xoxb-my-token CHANNEL=musicreactions SLACK_USERNAME=Discobear python3 listener.py
+CHROMECAST_FILTER="Living Room" SOUNDBRIDGE_IP=192.168.13.37 python3 ./listener.py python3 listener.py
 ```
 Use your favorite init script to execute the script after restart.
-*CHANNEL* and *SLACK_USERNAME* variables are optional, their default values are shown above.
+*CHROMECAST_FILTER* is optional, though I haven't tested what happens when more than one Chromecast is connected.
 
 ## Example
 
-<img src="https://github.com/sh0oki/chromecastslack/raw/master/examples/screenshot.png" alt="Screenshot" title="One Look is Worth A Thousand Words" width="657" height="98" />
+TODO

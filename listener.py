@@ -12,7 +12,7 @@ import logging
 import os
 
 import pychromecast
-from pychromecast.controllers.media import MediaStatusListener, MEDIA_PLAYER_STATE_BUFFERING, MEDIA_PLAYER_STATE_PLAYING
+from pychromecast.controllers.media import MediaStatusListener
 import bot
 
 HEALTH_CHECK_INTERVAL = 60
@@ -26,15 +26,12 @@ class MediaUpdatesListener(MediaStatusListener):
         self._lock = Lock()
 
     def new_media_status(self, status):
-        logging.info("[%s] Got new_media_status %s" % (self._player, status.player_state))
+        logging.info('[%s] Got new_media_status %s' % (self._player, status.player_state))
         if not status.player_is_playing and not status.player_is_paused and not status.player_is_idle:
-            logging.info("[%s] Became inactive (%s), releasing Soundbridge" % (self._player, status.player_state))
+            logging.info('[%s] Became inactive (%s), releasing Soundbridge' % (self._player, status.player_state))
             self._bot.disconnectSoundbridge()
             return
 
-        # TODO: 
-        # Song length
-        # indicate CC name?
         title = status.title
         artist = status.artist
         album = status.album_name
@@ -44,27 +41,24 @@ class MediaUpdatesListener(MediaStatusListener):
         try:
             if song != self._song:
                 self._song = song
-                logging.info("New song: %s" % (self._song, ))
-                self.postSong(title, artist, album, duration)
+                logging.info('New song: %s' % (self._song, ))
+                self._bot.updateSongInfo(title, artist, album, duration, self._player)
         finally:
             self._lock.release()
-       
-        if status.player_state == MEDIA_PLAYER_STATE_PLAYING:
-            self._bot.displayPlay()
-        elif status.player_state == MEDIA_PLAYER_STATE_BUFFERING:
-            self._bot.displayBuffering()
-        elif status.player_is_paused:
-            self._bot.displayPause()
-        else:
-            self._bot.displayStop()
+
+        match status.player_state:
+            case pychromecast.controllers.media.MEDIA_PLAYER_STATE_PLAYING:
+                self._bot.updateState(bot.State.PLAYING)
+            case pychromecast.controllers.media.MEDIA_PLAYER_STATE_BUFFERING:
+                self._bot.updateState(bot.State.BUFFERING)
+            case pychromecast.controllers.media.MEDIA_PLAYER_STATE_PAUSED:
+                self._bot.updateState(bot.State.PAUSED)
+            case _: # IDLE and UNKNOWN
+                self._bot.updateState(bot.State.STOPPED)
     
     def load_media_failed(self, queue_item_id: int, error_code: int) -> None:
-        """Called when load media failed."""
+        '''Called when load media failed.'''
         pass # Ignore events.
-
-    def postSong(self, title, artist, album, length_sec):
-        logging.info(f'[{self._player}] Updating display: {title} - {artist} - {album})')
-        self._bot.displaySongInfo(title, artist, album, length_sec, self._player)
 
 class ChromecastManager(object):
     def __init__(self, bot, cast_filter):
@@ -75,6 +69,11 @@ class ChromecastManager(object):
         self._browser = None
 
     def listenForChromecasts(self):
+        '''(Re-)Starts listening to Chromecasts on the net.
+
+        Will terminate all existing connections first, if any.
+
+        '''
         # Stop and delete all listeners, if any.
         self._lock.acquire(True)
         try:
@@ -85,16 +84,27 @@ class ChromecastManager(object):
                     cast.disconnect()
                     del cast
                 except Exception as e:
-                    log.error("Error while disconnecting Chromecast listener: %s", e)
+                    logging.error('Error while disconnecting Chromecast listener: %s', e)
                 del self.active_list[uuid]
         finally:
             self._lock.release()
         if self._browser:
+            # Must stop listening only after all discovered instances have been
+            # disconnected to avoid a logspam bug in pychromecast:
+            # https://github.com/home-assistant-libs/pychromecast/issues/866
             self._browser.stop_discovery()
-        # TODO set to 2-5 min
-        self._browser = pychromecast.get_chromecasts(tries=1, timeout=5, retry_wait=10, blocking=False, callback=self.discoveryCallback)
+        # Do not retry indefinitely as Chromecast might be powered off for a
+        # long time.
+        self._browser = pychromecast.get_chromecasts(
+                tries=3,
+                timeout=5,
+                retry_wait=10,
+                blocking=False,
+                callback=self.discoveryCallback
+        )
 
     def healthCheck(self, uuid):
+        '''Returns False if any check failed, True otherwise.'''
         if uuid not in self.active_list:
             return True
         cast = self.active_list[uuid]
@@ -105,6 +115,11 @@ class ChromecastManager(object):
         return alive
 
     def discoveryCallback(self, chromecast):
+        '''Registers with the passed Chromecast instance.
+
+        Does nothing if Chromcast is already known and healthy. If known but
+        unhealthy, attempts to disconnect first before re-registering.
+        '''
         logging.info(f'Discovery of {chromecast.name}')
         if self.cast_filter and chromecast.name not in self.cast_filter:
             logging.info(f'Ignoring discovered Chromecast {chromecast.name} due to filter list {self.cast_filter}')
@@ -133,26 +148,27 @@ class ChromecastManager(object):
         # # browser.stop_discovery() # This triggers an infinite failure loop upon connection loss, https://github.com/home-assistant-libs/pychromecast/issues/866
 
     def register(self, cast):
+        '''Registers with Chromecast and adds it to active_list if successful.'''
         if cast is None:
-            logging.error("Registration failed [%s]" % (cs, ))
+            logging.error('Registration failed [%s]' % (cast, ))
             return
         cc_name = cast.name
 
         media_listener = MediaUpdatesListener(cc_name, self.bot)
         self._lock.acquire(True)
         try:
+            cast.media_controller.register_status_listener(media_listener)
             cast.wait()
             self.active_list[cast.uuid] = cast
         finally:
             self._lock.release()
-        cast.media_controller.register_status_listener(media_listener)
-        logging.info("[%s] Registered" % (cc_name, ))
+        logging.info('[%s] Registered' % (cc_name, ))
 
 
 def main():
     soundbridge_address = os.environ['SOUNDBRIDGE_IP']
     if not soundbridge_address:
-        logging.fatal("IP address or name of Soundbridge needs to be specified in SOUNDBRIDGE_IP environment variable")
+        logging.fatal('IP address or name of Soundbridge needs to be specified in SOUNDBRIDGE_IP environment variable')
     cast_filter = os.environ['CHROMECAST_FILTER'].split(',')
     if cast_filter:
         logging.info(f'Only connecting to Chromecasts named {cast_filter}')
@@ -162,7 +178,6 @@ def main():
     m = ChromecastManager(bot.Bot(soundbridge_address), cast_filter)
     m.listenForChromecasts()
     while True:
-        logging.debug("Main loop firing")
         for uuid in list(m.active_list.keys()):
             if not m.healthCheck(uuid):
                 # Drop all current connections and reinitalize to ensure healthy state.

@@ -13,6 +13,7 @@ import os
 import urllib.request
 import json
 import urllib
+import collections
 
 import pychromecast
 from pychromecast.controllers.media import MediaStatusListener
@@ -20,10 +21,11 @@ import bot
 
 HEALTH_CHECK_INTERVAL = 60
 
+LastSong = collections.namedtuple('LastSong', 'title,artist,album,content_id')
 
 class MediaUpdatesListener(MediaStatusListener):
     def __init__(self, player, bot):
-        self._song = None
+        self._song = LastSong(None,None,None,None)
         self._player = player
         self._bot = bot
         self._lock = Lock()
@@ -39,19 +41,35 @@ class MediaUpdatesListener(MediaStatusListener):
         artist = status.artist
         album = status.album_name
         duration = status.duration
-        # Some sources don't come with metadata, try to detect and handle these separately.
-        if not title and 'youtube' in status.content_type.lower() and status.content_id:
-            title, artist = self._extractMetadataFromYouTubeVideo(status.content_id)
 
-        song = f'{title} - {artist} - {album} - {duration}'
-        self._lock.acquire(True)
-        try:
-            if song != self._song:
-                self._song = song
-                logging.info('New song: %s' % (self._song, ))
+        # Metadata delivery is a bit of a mess.
+        # 1. Videos from YouTube instead of YTM don't come with title, artist etc extracted.
+        # 2. When switching from songs on YTM to songs from YouTube, updates still contain the
+        #    old extracted title/artist/album even though the content_id changes correctly.
+        #    pychromecast bug: https://github.com/home-assistant-libs/pychromecast/issues/1018
+        metadata_stale = (title, artist, album) == (self._song.title, self._song.artist, self._song.album)
+        metadata_missing = not title
+        can_lookup_by_content_id = status.content_type and 'youtube' in status.content_type and status.content_id
+        has_new_content_id = status.content_id != self._song.content_id
+        skip_metadata_update = False
+        if metadata_stale or metadata_missing:
+            skip_metadata_update = True
+            # Only do lookup if it the metadata is missing or known to be stale (we have a newer content_id).
+            if can_lookup_by_content_id and (metadata_missing or has_new_content_id):
+                title, artist, success = self._extractMetadataFromYouTubeVideo(status.content_id)
+                # Prefer displaying an error over reverting back to stale information.
+                skip_metadata_update = success or metadata_stale
+                album = None
+                with self._lock:
+                    # Only update content_id, so we can detect when we finally get fresh metadata.
+                    self._song = self._song._replace(content_id=status.content_id)
+                    logging.info('New song, only updated content-id: %s', self._song)
                 self._bot.updateSongInfo(title, artist, album, duration, self._player)
-        finally:
-            self._lock.release()
+        if not metadata_missing and not skip_metadata_update:
+            with self._lock:
+                self._song = LastSong(title=title, artist=artist, album=album, content_id=status.content_id)
+                logging.info('New Song from metadata: %s', self._song)
+            self._bot.updateSongInfo(title, artist, album, duration, self._player)
 
         match status.player_state:
             case pychromecast.controllers.media.MEDIA_PLAYER_STATE_PLAYING:
@@ -64,7 +82,7 @@ class MediaUpdatesListener(MediaStatusListener):
                 self._bot.updateState(bot.CCState.STOPPED)
 
     def _extractMetadataFromYouTubeVideo(self, video_id):
-        '''Retrieves the video metadata and returns (title, channel name).
+        '''Retrieves the video metadata and returns (title, channel name, success).
 
         Adapted from https://stackoverflow.com/questions/1216029/get-title-from-youtube-videos.
         '''
@@ -79,11 +97,15 @@ class MediaUpdatesListener(MediaStatusListener):
                 response_text = response.read()
                 data = json.loads(response_text.decode())
                 title = data['title']
+        except urllib.error.HTTPError as http_e:
+            logging.error('Got HTTP %s for metadata of YT video %s: %s', http_e.code, video_id, http_e.reason)
+            return (f'<YouTube ID {video_id}>', f'<HTTP {http_e.code}: {http_e.reason}>', False)
         except Exception as e:
             logging.error('Failed to retrieve metadata for YT video %s: %s', video_id, e)
-            return (f'<YouTube video {video_id}>', '<Failed to get metadata>')
+            return (f'<YouTube ID {video_id}>', f'<{e}>', False)
+
         channel = f'[YT] {data["author_name"]}' if 'author_name' in data else '[YT] <unknown channel>'
-        return (title, channel)
+        return (title, channel, True)
 
     def load_media_failed(self, queue_item_id: int, error_code: int) -> None:
         pass # Ignore failures.

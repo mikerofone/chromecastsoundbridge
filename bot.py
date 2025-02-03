@@ -1,6 +1,7 @@
 from enum import Enum
 from dataclasses import dataclass
 import logging
+import re
 import socket
 import threading
 import time
@@ -21,6 +22,9 @@ ICON_X_LEFT = SCREEN_WIDTH - 18
 # Status border is drawn from right end of the screen.
 STATUS_BORDER_WIDTH = 35
 
+# An artist name matching this pattern indicates a song that's played from YTM
+# instead of from a regular YouTube video.
+YTM_SONG_ARTIST_RE_PATTERN = r'\[YT\] (.*) - Topic'
 
 class CCState(Enum):
     IDLE = 0
@@ -51,7 +55,7 @@ class Bot(object):
         self._delayed_output = None
 
         self._resetMetadata()
-    
+
     def _resetMetadata(self):
         self._sock = None
         self._soundbridge_inited = False
@@ -161,7 +165,7 @@ class Bot(object):
     def _center(self, text, max_num_chars):
         left_indent_count = (max_num_chars - len(text)) // 2
         return (' ' * left_indent_count) + text
-    
+
     def _printText(self, first_line, second_line, center = True):
         # First truncate, then escape as escaping doesn't affect rendered text length.
         max_text_width = SCREEN_WIDTH - STATUS_BORDER_WIDTH
@@ -182,15 +186,15 @@ class Bot(object):
             f'text 0 0 "{first_line}"'.encode(),
             f'text 0 8 "{second_line}"'.encode(),
         ])
-    
+
     def _printCurrentSong(self):
         # Omit album entirely if not set.
-        album_info = f'| {self._state.album}' if self._state.album else ''
+        album_info = f' | {self._state.album}' if self._state.album else ''
         self._printText(
-            self._state.title or '<Unknown title>', 
+            self._state.title or '<Unknown title>',
             f'{self._state.artist or "<Unknown artist>"}{album_info}'
         )
-    
+
     def _printCurrentTime(self):
         if self._state.length_sec is not None:
             minutes = int(self._state.length_sec / 60)
@@ -210,7 +214,7 @@ class Bot(object):
             b'color 1',
             f'text {duration_x_start} {LINE_HEIGHT} "{time_str}"'.encode(),
         ])
-    
+
     def _redraw(self):
         with self._lock:
             logging.info(f'redrawing at {time.time()}')
@@ -226,7 +230,7 @@ class Bot(object):
                 self._printText('End of playlist.', '', center=False)
             else:
                 self._printCurrentSong()
-            
+
             self._printCurrentTime()
 
             self._delayed_output = None
@@ -241,7 +245,7 @@ class Bot(object):
                 # TODO: Add timer to display error if buffering > 5 sec. (e.g. force-stopped by youtube?)
             case CCState.STOPPED:
                 self._drawStop()
-    
+
     def _enqueueRedraw(self):
         with self._lock:
             if self._delayed_output:
@@ -259,8 +263,15 @@ class Bot(object):
         logging.info(f'enqueued redraw for state {self._state.ccstate} at {time.time()}')
 
     def updateSongInfo(self, title, artist, album, length_sec, cast_name):
+        #import traceback; traceback.print_stack()
         self._state.title = title
-        self._state.artist = artist
+        # Hack: The YT metadata arrives earlier than the more detailed parsed one.
+        # Attempt to detect that for a little cleaner output.
+        if artist and (m := re.fullmatch(YTM_SONG_ARTIST_RE_PATTERN, artist)):
+            # Song from YTM, extract artist name.
+            self._state.artist = m[1]
+        else:
+            self._state.artist = artist
         self._state.album = album
         self._state.length_sec = length_sec
         self._state.from_chromecast = cast_name

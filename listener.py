@@ -10,6 +10,9 @@ from time import sleep
 from multiprocessing import Lock
 import logging
 import os
+import urllib.request
+import json
+import urllib
 
 import pychromecast
 from pychromecast.controllers.media import MediaStatusListener
@@ -27,7 +30,6 @@ class MediaUpdatesListener(MediaStatusListener):
 
     def new_media_status(self, status):
         logging.info('[%s] Got new_media_status %s' % (self._player, status.player_state))
-        logging.info(status)
         if not status.player_is_playing and not status.player_is_paused and not status.player_is_idle:
             logging.info('[%s] Became inactive (%s), releasing Soundbridge' % (self._player, status.player_state))
             self._bot.disconnectSoundbridge()
@@ -37,6 +39,10 @@ class MediaUpdatesListener(MediaStatusListener):
         artist = status.artist
         album = status.album_name
         duration = status.duration
+        # Some sources don't come with metadata, try to detect and handle these separately.
+        if not title and 'youtube' in status.content_type.lower() and status.content_id:
+            title, artist = self._extractMetadataFromYouTubeVideo(status.content_id)
+
         song = f'{title} - {artist} - {album} - {duration}'
         self._lock.acquire(True)
         try:
@@ -56,10 +62,31 @@ class MediaUpdatesListener(MediaStatusListener):
                 self._bot.updateState(bot.CCState.PAUSED)
             case _: # IDLE and UNKNOWN
                 self._bot.updateState(bot.CCState.STOPPED)
-    
+
+    def _extractMetadataFromYouTubeVideo(self, video_id):
+        '''Retrieves the video metadata and returns (title, channel name).
+
+        Adapted from https://stackoverflow.com/questions/1216029/get-title-from-youtube-videos.
+        '''
+        params = {'format': 'json', 'url': f'https://www.youtube.com/watch?v={video_id}'}
+        url = 'https://www.youtube.com/oembed'
+        query_string = urllib.parse.urlencode(params)
+        url = url + '?' + query_string
+
+        try:
+            logging.info('Resolving metadata for YouTube video %s', video_id)
+            with urllib.request.urlopen(url) as response:
+                response_text = response.read()
+                data = json.loads(response_text.decode())
+                title = data['title']
+        except Exception as e:
+            logging.error('Failed to retrieve metadata for YT video %s: %s', video_id, e)
+            return (f'<YouTube video {video_id}>', '<Failed to get metadata>')
+        channel = f'[YT] {data["author_name"]}' if 'author_name' in data else '[YT] <unknown channel>'
+        return (title, channel)
+
     def load_media_failed(self, queue_item_id: int, error_code: int) -> None:
-        '''Called when load media failed.'''
-        pass # Ignore events.
+        pass # Ignore failures.
 
 class ChromecastManager(object):
     def __init__(self, bot, cast_filter):
@@ -125,7 +152,7 @@ class ChromecastManager(object):
         if self.cast_filter and chromecast.name not in self.cast_filter:
             logging.info(f'Ignoring discovered Chromecast {chromecast.name} due to filter list {self.cast_filter}')
             return
-            
+
         if chromecast.uuid in self.active_list:
             if self.healthCheck(chromecast.uuid):
                 # Skip known and alive entry.

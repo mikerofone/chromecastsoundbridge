@@ -73,13 +73,13 @@ class MediaUpdatesListener(MediaStatusListener):
 
         match status.player_state:
             case pychromecast.controllers.media.MEDIA_PLAYER_STATE_PLAYING:
-                self._bot.updateState(bot.CCState.PLAYING)
+                self._bot.updateState(bot.CCState.PLAYING, self._player)
             case pychromecast.controllers.media.MEDIA_PLAYER_STATE_BUFFERING:
-                self._bot.updateState(bot.CCState.BUFFERING)
+                self._bot.updateState(bot.CCState.BUFFERING, self._player)
             case pychromecast.controllers.media.MEDIA_PLAYER_STATE_PAUSED:
-                self._bot.updateState(bot.CCState.PAUSED)
+                self._bot.updateState(bot.CCState.PAUSED, self._player)
             case _: # IDLE and UNKNOWN
-                self._bot.updateState(bot.CCState.STOPPED)
+                self._bot.updateState(bot.CCState.STOPPED, self._player)
 
     def _extractMetadataFromYouTubeVideo(self, video_id):
         '''Retrieves the video metadata and returns (title, channel name, success).
@@ -99,6 +99,8 @@ class MediaUpdatesListener(MediaStatusListener):
                 title = data['title']
         except urllib.error.HTTPError as http_e:
             logging.error('Got HTTP %s for metadata of YT video %s: %s', http_e.code, video_id, http_e.reason)
+            if http_e.code == 403:
+                return (f'<ID {video_id}>', '<From uploaded songs>', False)
             return (f'<YouTube ID {video_id}>', f'<HTTP {http_e.code}: {http_e.reason}>', False)
         except Exception as e:
             logging.error('Failed to retrieve metadata for YT video %s: %s', video_id, e)

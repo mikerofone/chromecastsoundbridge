@@ -74,7 +74,9 @@ class Bot(object):
                 self._sock = socket.create_connection((self._soundbridge_address, 4444))
                 self._sock.settimeout(SOUNDBRIDGE_CONNECT_TIMEOUT_SEC)
             except Exception as e:
-                logging.error('Failed to connect within %s seconds: %s', SOUNDBRIDGE_CONNECT_TIMEOUT_SEC, e)
+                logging.info('Failed to connect within %s seconds: %s', SOUNDBRIDGE_CONNECT_TIMEOUT_SEC, e)
+                if self._sock:
+                    self.disconnectSoundbridge()
                 return False
             logging.info('Connected with socket timeout of %s', self._sock.gettimeout())
         if not self._soundbridge_inited:
@@ -98,6 +100,9 @@ class Bot(object):
         logging.info('Disconnected from Soundbridge.')
 
     def sendCommandsToSoundbridge(self, commands):
+        if not self._sock:
+            logging.info('Soundbridge not connected, not sending commands')
+            return False
         if isinstance(commands, str):
             commands = [commands]
         try:
@@ -216,23 +221,26 @@ class Bot(object):
         ])
 
     def _redraw(self):
-        with self._lock:
-            logging.info(f'redrawing at {time.time()}')
-            # Ensure connected and initialized, no-op if called repeatedly.
-            self.connectSoundbridge()
-            self.sendCommandsToSoundbridge([
-                b'clear',
-            ])
+        try:
+            with self._lock:
+                logging.info(f'redrawing at {time.time()}')
+                # Ensure connected and initialized, no-op if called repeatedly.
+                if not self.connectSoundbridge():
+                    logging.info('Soundbridge offline, not updating')
+                    return
+                self.sendCommandsToSoundbridge([
+                    b'clear',
+                ])
 
-            if self._state.ccstate == CCState.INITIALIZING:
-                self._printText(f'{self._state.from_chromecast} is starting playback...', '', center=False)
-            elif self._state.ccstate == CCState.STOPPED:
-                self._printText('End of playlist.', '', center=False)
-            else:
-                self._printCurrentSong()
+                if self._state.ccstate == CCState.INITIALIZING:
+                    self._printText(f'{self._state.from_chromecast} is starting playback...', '', center=False)
+                elif self._state.ccstate == CCState.STOPPED:
+                    self._printText('End of playlist.', '', center=False)
+                else:
+                    self._printCurrentSong()
 
-            self._printCurrentTime()
-
+                self._printCurrentTime()
+        finally:
             self._delayed_output = None
 
         match self._state.ccstate:
@@ -255,12 +263,13 @@ class Bot(object):
             timer.start()
             self._delayed_output = timer
 
-    def updateState(self, state):
+    def updateState(self, state, cast_name):
         if state in [CCState.PLAYING, CCState.BUFFERING] and not (self._state.title or self._state.artist or self._state.album):
             state = CCState.INITIALIZING
         self._state.ccstate = state
+        self._state.from_chromecast = cast_name
         self._enqueueRedraw()
-        logging.info(f'enqueued redraw for state {self._state.ccstate} at {time.time()}')
+        logging.info(f'enqueued redraw for state {self._state.ccstate} from {self._state.from_chromecast} at {time.time()}')
 
     def updateSongInfo(self, title, artist, album, length_sec, cast_name):
         #import traceback; traceback.print_stack()

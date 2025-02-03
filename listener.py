@@ -27,6 +27,7 @@ class MediaUpdatesListener(MediaStatusListener):
 
     def new_media_status(self, status):
         logging.info('[%s] Got new_media_status %s' % (self._player, status.player_state))
+        logging.info(status)
         if not status.player_is_playing and not status.player_is_paused and not status.player_is_idle:
             logging.info('[%s] Became inactive (%s), releasing Soundbridge' % (self._player, status.player_state))
             self._bot.disconnectSoundbridge()
@@ -48,13 +49,13 @@ class MediaUpdatesListener(MediaStatusListener):
 
         match status.player_state:
             case pychromecast.controllers.media.MEDIA_PLAYER_STATE_PLAYING:
-                self._bot.updateState(bot.State.PLAYING)
+                self._bot.updateState(bot.CCState.PLAYING)
             case pychromecast.controllers.media.MEDIA_PLAYER_STATE_BUFFERING:
-                self._bot.updateState(bot.State.BUFFERING)
+                self._bot.updateState(bot.CCState.BUFFERING)
             case pychromecast.controllers.media.MEDIA_PLAYER_STATE_PAUSED:
-                self._bot.updateState(bot.State.PAUSED)
+                self._bot.updateState(bot.CCState.PAUSED)
             case _: # IDLE and UNKNOWN
-                self._bot.updateState(bot.State.STOPPED)
+                self._bot.updateState(bot.CCState.STOPPED)
     
     def load_media_failed(self, queue_item_id: int, error_code: int) -> None:
         '''Called when load media failed.'''

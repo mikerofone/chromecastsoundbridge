@@ -1,7 +1,6 @@
 from enum import Enum
+from dataclasses import dataclass
 import logging
-import json
-import os
 import socket
 import threading
 import time
@@ -23,7 +22,7 @@ ICON_X_LEFT = SCREEN_WIDTH - 18
 STATUS_BORDER_WIDTH = 35
 
 
-class State(Enum):
+class CCState(Enum):
     IDLE = 0
     PLAYING = 1
     PAUSED = 2
@@ -31,20 +30,23 @@ class State(Enum):
     STOPPED = 4
     INITIALIZING = 5
 
+@dataclass
+class PlaybackState:
+    title : str | None = None
+    artist : str | None = None
+    album : str | None = None
+    length_sec : int | None = None
+    ccstate : CCState = CCState.INITIALIZING
+    from_chromecast : str | None = None
+
 class Bot(object):
     def __init__(self, soundbridge_address):
         self._soundbridge_address = soundbridge_address
         self._lock = threading.Lock()
 
-        # Runtime state.
         self._sock = None
         self._soundbridge_inited = False
-        self._title = None
-        self._artist = None
-        self._album = None
-        self._length_sec = None
         self._state = None
-        self._from_chromecast = None
         # Timer for delayed screen updates to reduce flicker.
         self._delayed_output = None
 
@@ -53,13 +55,8 @@ class Bot(object):
     def _resetMetadata(self):
         self._sock = None
         self._soundbridge_inited = False
-        self._title = None
-        self._artist = None
-        self._album = None
-        self._length_sec = None
-        self._state = State.IDLE
-        self._from_chromecast = None
-        # Delay screen updates to reduce flicker.
+        self._state = PlaybackState()
+        # Abort stale updates, if any.
         with self._lock:
             if self._delayed_output:
                 self._delayed_output.cancel()
@@ -189,14 +186,14 @@ class Bot(object):
     
     def _printCurrentSong(self):
         self._printText(
-            self._title or '<Unknown title>', 
-            f'{self._artist or "<Unknown artist>"} | {self._album or "<Unknown album>"}'
+            self._state.title or '<Unknown title>', 
+            f'{self._state.artist or "<Unknown artist>"} | {self._state.album or "<Unknown album>"}'
         )
     
     def _printCurrentTime(self):
-        if self._length_sec is not None:
-            minutes = int(self._length_sec / 60)
-            seconds = int(self._length_sec % 60)
+        if self._state.length_sec is not None:
+            minutes = int(self._state.length_sec / 60)
+            seconds = int(self._state.length_sec % 60)
             time_str = f'{minutes:d}:{seconds:02d}'
         else:
             minutes = 0
@@ -222,9 +219,9 @@ class Bot(object):
                 b'clear',
             ])
 
-            if self._state == State.INITIALIZING:
-                self._printText(f'{self._from_chromecast} is starting playback...', '', center=False)
-            elif self._state == State.STOPPED:
+            if self._state.ccstate == CCState.INITIALIZING:
+                self._printText(f'{self._state.from_chromecast} is starting playback...', '', center=False)
+            elif self._state.ccstate == CCState.STOPPED:
                 self._printText('End of playlist.', '', center=False)
             else:
                 self._printCurrentSong()
@@ -233,15 +230,15 @@ class Bot(object):
 
             self._delayed_output = None
 
-        match self._state:
-            case State.PLAYING:
+        match self._state.ccstate:
+            case CCState.PLAYING:
                 self._drawPlay()
-            case State.PAUSED:
+            case CCState.PAUSED:
                 self._drawPause()
-            case State.BUFFERING | State.INITIALIZING:
+            case CCState.BUFFERING | CCState.INITIALIZING:
                 self._drawBuffering()
                 # TODO: Add timer to display error if buffering > 5 sec. (e.g. force-stopped by youtube?)
-            case State.STOPPED:
+            case CCState.STOPPED:
                 self._drawStop()
     
     def _enqueueRedraw(self):
@@ -252,20 +249,19 @@ class Bot(object):
             timer = threading.Timer(SOUNDBRIDGE_UPDATE_DELAY_SEC, self._redraw)
             timer.start()
             self._delayed_output = timer
-    
+
     def updateState(self, state):
-        if state in [State.PLAYING, State.BUFFERING] and not (self._title or self._artist or self._album):
-            state = State.INITIALIZING
-        self._state = state
+        if state in [CCState.PLAYING, CCState.BUFFERING] and not (self._state.title or self._state.artist or self._state.album):
+            state = CCState.INITIALIZING
+        self._state.ccstate = state
         self._enqueueRedraw()
-        logging.info(f'enqueued redraw for {state} at {time.time()}')
+        logging.info(f'enqueued redraw for state {self._state.ccstate} at {time.time()}')
 
     def updateSongInfo(self, title, artist, album, length_sec, cast_name):
-        self._title = title
-        self._artist = artist
-        self._album = album
-        self._length_sec = length_sec
-        self._from_chromecast = cast_name
+        self._state.title = title
+        self._state.artist = artist
+        self._state.album = album
+        self._state.length_sec = length_sec
+        self._state.from_chromecast = cast_name
         self._enqueueRedraw()
-        logging.info(f'enqueued redraw for {title} at {time.time()}')
-
+        logging.info(f'enqueued redraw for song {title} at {time.time()}')

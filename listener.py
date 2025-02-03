@@ -98,9 +98,9 @@ class MediaUpdatesListener(MediaStatusListener):
                 data = json.loads(response_text.decode())
                 title = data['title']
         except urllib.error.HTTPError as http_e:
-            logging.error('Got HTTP %s for metadata of YT video %s: %s', http_e.code, video_id, http_e.reason)
             if http_e.code == 403:
                 return (f'<ID {video_id}>', '<From uploaded songs>', False)
+            logging.error('Got HTTP %s for metadata of YT video %s: %s', http_e.code, video_id, http_e.reason)
             return (f'<YouTube ID {video_id}>', f'<HTTP {http_e.code}: {http_e.reason}>', False)
         except Exception as e:
             logging.error('Failed to retrieve metadata for YT video %s: %s', video_id, e)
@@ -229,6 +229,8 @@ def main():
 
     m = ChromecastManager(bot.Bot(soundbridge_address), cast_filter)
     m.listenForChromecasts()
+    logging.info('Reducing logging to WARNING level')
+    logging.basicConfig(level=logging.WARNING, force=True)
     while True:
         for uuid in list(m.active_list.keys()):
             if not m.healthCheck(uuid):

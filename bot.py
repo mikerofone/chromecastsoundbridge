@@ -130,7 +130,6 @@ class Bot(object):
         ])
 
     def _drawPlay(self):
-        self._printCurrentSong()
         self.sendCommandsToSoundbridge([
             b'color 0',
             f'rect {ICON_X_LEFT - 1} 0 9 8'.encode(),
@@ -185,9 +184,11 @@ class Bot(object):
         ])
     
     def _printCurrentSong(self):
+        # Omit album entirely if not set.
+        album_info = f'| {self._state.album}' if self._state.album else ''
         self._printText(
             self._state.title or '<Unknown title>', 
-            f'{self._state.artist or "<Unknown artist>"} | {self._state.album or "<Unknown album>"}'
+            f'{self._state.artist or "<Unknown artist>"}{album_info}'
         )
     
     def _printCurrentTime(self):

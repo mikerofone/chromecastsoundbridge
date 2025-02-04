@@ -221,11 +221,12 @@ def main():
     soundbridge_address = os.environ['SOUNDBRIDGE_IP']
     if not soundbridge_address:
         logging.fatal('IP address or name of Soundbridge needs to be specified in SOUNDBRIDGE_IP environment variable')
-    cast_filter = os.environ['CHROMECAST_FILTER'].split(',')
-    if cast_filter:
+    if 'CHROMECAST_FILTER' in os.environ:
         logging.info(f'Only connecting to Chromecasts named {cast_filter}')
+        cast_filter = os.environ['CHROMECAST_FILTER'].split(',')
     else:
         logging.info(f'Will report status of all Chromecasts, use comma-sep values for CHROMECAST_FILTER environment variable to limit')
+        cast_filter = None
 
     m = ChromecastManager(bot.Bot(soundbridge_address), cast_filter)
     m.listenForChromecasts()

@@ -10,7 +10,7 @@ else
     PY_ENV_ROOT="$1"
 fi
 
-PID_FILE="${PY_ENV_ROOT}/current_pid"
+PID_FILE="${PY_ENV_ROOT}/chromecastsoundbridge-master/current_pid"
 if [ ! -e "${PID_FILE}" ] ; then
     echo "No old process to kill (file \"${PID_FILE}\" doesn't exist)"
     exit 1

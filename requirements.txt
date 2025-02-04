@@ -1,2 +1,1 @@
 pychromecast>=0.8.1
-slackclient==1.3.1

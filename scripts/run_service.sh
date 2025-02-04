@@ -35,5 +35,5 @@ else
 fi
 
 source "${PY_ENV_ROOT}/bin/activate"
-cd "${PY_ENV_ROOT}/script"
-PID_FILE="${PY_ENV_ROOT}/current_pid" "${PYTHON_NAME}" "${PY_ENV_ROOT}/script/listener.py"
+cd "${PY_ENV_ROOT}/chromecastsoundbridge-master"
+PID_FILE="${PY_ENV_ROOT}/current_pid" "${PYTHON_NAME}" "${PY_ENV_ROOT}/chromecastsoundbridge-master/listener.py"

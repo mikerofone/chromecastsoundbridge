@@ -22,11 +22,10 @@ fi
 echo "Press a key to install to \"${PY_ENV_ROOT}\" using Python binary \"${PYTHON_NAME}\" or CTRL+C to abort."
 read foo
 
-rm -rf "${PY_ENV_ROOT}/script/"
-mkdir "${PY_ENV_ROOT}/script/"
-cd "${PY_ENV_ROOT}/script"
+rm -rf "${PY_ENV_ROOT}/chromecastsoundbridge-master/"
+cd "${PY_ENV_ROOT}/"
 wget https://github.com/mikerofone/chromecastsoundbridge/archive/refs/heads/master.zip
-7z e master.zip
+7z x master.zip
 rm master.zip
 source "${PY_ENV_ROOT}/bin/activate"
-"${PY_ENV_ROOT}/bin/${PYTHON_NAME}" -m pip install -r ./requirements.txt
+"${PY_ENV_ROOT}/bin/${PYTHON_NAME}" -m pip install -r ./chromecastsoundbridge-master/requirements.txt

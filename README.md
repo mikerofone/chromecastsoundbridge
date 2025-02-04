@@ -66,7 +66,7 @@ Download `scripts/reinstall_from_git.sh` to a temporary location your server and
 For example:
 
 ```shell
-wget https://github.com/mikerofone/chromecastsoundbridge/raw/scripts/reinstall_from_git.sh
+wget https://github.com/mikerofone/chromecastsoundbridge/raw/master/scripts/reinstall_from_git.sh
 chmod +x reinstall_from_git.sh
 ./reinstall_from_git.sh  # If you used my values.
 ./reinstall_from_git.sh /tmp/my_root_path python3  # If you didn't.
@@ -74,10 +74,10 @@ chmod +x reinstall_from_git.sh
 
 ### Test it
 
-There's now a `script` directory in your environment root that contains the service. `scripts/run_service.sh` only requires the IP address of the SoundBridge, but also takes the Chromecast name filter, environment base directory and python3 basename as additional parameters if you need to set them.
+There's now a `chromecastsoundbridge-master` directory in your environment root that contains the service. `scripts/run_service.sh` only requires the IP address of the SoundBridge, but also takes the Chromecast name filter, environment base directory and python3 basename as additional parameters if you need to set them.
 
 ```shell
-cd script
+cd chromecastsoundbridge-master
 # Any of the following work:
 scripts/run_service.sh 192.168.13.37
 scripts/run_service.sh 192.168.13.37 "Living Room"

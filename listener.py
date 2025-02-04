@@ -230,8 +230,6 @@ def main():
 
     m = ChromecastManager(bot.Bot(soundbridge_address), cast_filter)
     m.listenForChromecasts()
-    logging.info('Reducing logging to WARNING level')
-    logging.basicConfig(level=logging.WARNING, force=True)
     while True:
         for uuid in list(m.active_list.keys()):
             if not m.healthCheck(uuid):
@@ -241,6 +239,16 @@ def main():
 
 
 if __name__ == '__main__':
-    logging.basicConfig(level=logging.INFO)
-    main()
+    logging.basicConfig(level=logging.WARNING)
+    pid_file_name = None
+    if 'PID_FILE' in os.environ:
+        pid_file_name = os.environ['PID_FILE']
+        with open(pid_file_name, 'w', encoding='utf-8') as f:
+            f.write(str(os.getpid()))
+    try:
+        main()
+    finally:
+        if pid_file_name:
+            # Not handling exception since we're going don't anyways.
+            os.remove(pid_file_name)
 
